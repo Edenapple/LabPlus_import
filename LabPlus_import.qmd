@@ -1,0 +1,60 @@
+---
+title: "LabPlus_import"
+format: html
+date: 2025-01-20
+---
+
+## Aims
+
+-   Place hematology data from LabPlus PDFs into an excel spreadsheet.
+
+## Setup
+
+```{r}
+#| label: setup
+
+library(readxl)
+library(tidyverse)
+library(writexl)
+library(pdftools)
+```
+
+## Read LabPlus PDF files
+
+Extract required information and build a table using column names from spreadsheet.
+
+```{r}
+#| label: pdf-import
+
+# All immune parameters
+col_names <- c("ID", "Hb", "RBC", "Hct", "MCV", "MCH", "RDW", "MCHC", "Platelets", "Imm Grans", "WBC", "Neutrophils", "Basophils", "Eosinophils", "Monocytes", "Lymphocytes")
+
+# Get a list of locations of all LabPlus PDF files.
+paths <- list.files(path = "files", pattern = "pdf$", recursive = TRUE, full.names = TRUE)
+
+# Function to output a tibble containing a list of measurements from 1 LabPlus PDF file.
+get_entry <- function(file){
+  txt <- pdf_text(file) # Read the text inside the PDF file.
+  ID <- str_extract(txt, "Name: (\\S+)", group = 1) # Get the ID by searching for "Name: " and taking the group after that.
+  blood_count <- txt |> # Get a list of measurements from txt.
+    str_extract(regex("FULL BLOOD COUNT.+BLOOD FILM", dotall = TRUE)) |> # Extract everything between "FULL BLOOD COUNT" and "BLOOD FILM".
+    str_extract_all(regex("^\\D+\\d\\S+", multiline = TRUE)) |> # Extract each line ending in a measurement into a list of lists.
+    unlist() |> # Unnest the list of lists to get a list of lines.
+    str_extract("\\d.*") # Get 1 measurement from every line by looking for the numbers.
+  entry <- c(ID, blood_count) |> # Combine ID with blood_count into a list.
+    t() |> # Transpose the list so it becomes horizontal.
+    as_tibble() # Make the list a tibble.
+}
+
+combined <- map(paths, get_entry) |> # Apply get_entry to all files in paths.
+  list_rbind() # Bind every output tibble together as rows of the combined tibble.
+
+colnames(combined) <- col_names # Insert the column names from names extracted from the excel spreadsheet.
+
+combined <- combined |>
+  arrange(ID) # Sort combined by ID.
+
+write_xlsx(combined, path = "files/LabPlus.xlsx") # Export combined as an xlsx file.
+```
+
+\
